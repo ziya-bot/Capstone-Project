@@ -1,0 +1,61 @@
+#include "LoRaWan_APP.h"
+#include "Arduino.h"
+
+// LoRa configuration settings
+#define RF_FREQUENCY          433000000  // Frequency in Hz
+#define LORA_BANDWIDTH        0          // [0: 125 kHz, 1: 250 kHz, 2: 500 kHz]
+#define LORA_SPREADING_FACTOR 7          // [SF7..SF12]
+#define LORA_CODINGRATE       1          // [1: 4/5, 2: 4/6, 3: 4/7, 4: 4/8]
+#define LORA_PREAMBLE_LENGTH  8          // Same for Tx and Rx
+#define LORA_SYMBOL_TIMEOUT   0          // Symbols
+#define LORA_FIX_LENGTH_PAYLOAD_ON false
+#define LORA_IQ_INVERSION_ON  false
+#define RX_TIMEOUT_VALUE      1000       // Timeout for receiving data
+
+#define BUFFER_SIZE 30  // Define the payload size
+
+char rxpacket[BUFFER_SIZE];  // Buffer to store received packets
+static RadioEvents_t RadioEvents;
+int16_t rssi, rxSize;
+bool lora_idle = true;
+
+// Function prototypes
+void OnRxDone(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr);
+
+void setup() {
+    Serial.begin(115200);
+    Mcu.begin(HELTEC_BOARD, SLOW_CLK_TPYE);
+    
+    // Initialize LoRa
+    RadioEvents.RxDone = OnRxDone;  // Set callback for when packet is received
+    Radio.Init(&RadioEvents);  // Initialize the radio with the event handlers
+    Radio.SetChannel(RF_FREQUENCY);  // Set the LoRa frequency
+    Radio.SetRxConfig(MODEM_LORA, LORA_BANDWIDTH, LORA_SPREADING_FACTOR,
+                      LORA_CODINGRATE, 0, LORA_PREAMBLE_LENGTH,
+                      LORA_SYMBOL_TIMEOUT, LORA_FIX_LENGTH_PAYLOAD_ON,
+                      0, true, 0, 0, LORA_IQ_INVERSION_ON, true);
+    
+    Serial.println("LoRa Receiver Initialized. Listening for incoming packets...");
+    
+    // Start the receiver immediately
+    Radio.Rx(0);  // Put LoRa into receive mode
+}
+
+void loop() {
+    Radio.IrqProcess();  // Process any LoRa interrupts
+}
+
+// LoRa packet received handler
+void OnRxDone(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr) {
+    rxSize = size;  // Store received packet size
+    
+    // Copy the received payload into rxpacket buffer
+    memcpy(rxpacket, payload, size);
+    rxpacket[size] = '\0';  // Null-terminate the received string
+
+    // Print the received packet to Serial Monitor
+    Serial.printf("Received packet over LoRa: \"%s\" with RSSI %d, length %d\n", rxpacket, rssi, rxSize);
+
+    // Immediately listen for the next packet
+    Radio.Rx(0);  // Re-enter receive mode
+}
