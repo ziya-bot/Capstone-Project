@@ -4,12 +4,12 @@
 #include <DallasTemperature.h>
 
 // WiFi credentials
-const char* ssid = "Jorge";
-const char* password = "Dogette3.";
+const char* ssid = "wifi name";
+const char* password = "wifi password";
 
 // Server IP address and port
-const char* serverIP = "172.20.10.9";  // The ESP IP address
-const int serverPort = 8080;             // The server port, usually 80 for HTTP
+const char* serverIP = "esp ip address";  // The ESP IP address
+const int serverPort = port numb;             // The server port, usually 80 for HTTP
 
 // Pin definitions
 #define TURBIDITY_PIN A1  // Turbidity sensor connected to analog pin A1
@@ -49,7 +49,7 @@ void loop() {
   sensors.requestTemperatures();
   float temperatureC = sensors.getTempCByIndex(0);  // Get temperature in Celsius
 
-  // Read turbidity sensor value
+  // Read turbidity value from KEYSTUDIO Turbidity sensor 
   int turbidityValue = analogRead(TURBIDITY_PIN);
   if (turbidityValue < 4095) {  // Check if the pin is not floating
     turbidityVoltage = turbidityValue * (5.0 / 4095.0);  // Using 5.0V reference
@@ -62,7 +62,7 @@ void loop() {
     Serial.println("Turbidity sensor not connected.");
   }
 
-  // Read pH sensor value
+  // Read pH value from DFRobot Gravity: Analog pH meter V2 Sensor
   int phValue = analogRead(PH_PIN);
   if (phValue < 4095) {  // Check if the pin is not floating
     phVoltage = phValue * (5.0 / 4095.0);  // Using 5.0V reference
