@@ -12,9 +12,9 @@ const char* serverIP = "esp ip address";  // The ESP IP address
 const int serverPort = port numb;             // The server port, usually 80 for HTTP
 
 // Pin definitions
-#define TURBIDITY_PIN A1  // Turbidity sensor connected to analog pin A1
-#define PH_PIN A2         // pH sensor connected to analog pin A2
-#define ONE_WIRE_BUS 21   // DS18B20 temperature sensor connected to GPIO 21
+#define TURBIDITY_PIN 05  // Turbidity sensor connected to analog pin GPIO 05
+#define PH_PIN 19         // pH sensor connected to analog pin GPIO 19
+#define ONE_WIRE_BUS 20   // DS18B20 temperature sensor connected to GPIO 21
 
 // Set up OneWire and DallasTemperature library
 OneWire oneWire(ONE_WIRE_BUS);
