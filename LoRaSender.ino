@@ -24,9 +24,9 @@ double txNumber;
 bool lora_idle = true;
 
 // Sensor pin definitions
-#define PH_PIN A2        // pH sensor connected to A2
-#define TURBIDITY_PIN A1 // Turbidity sensor connected to A1
-#define ONE_WIRE_BUS 21  // Data wire for DS18B20 temperature sensor connected to GPIO 21
+#define PH_PIN 2        // pH sensor connected to GPIO 2
+#define TURBIDITY_PIN 1 // Turbidity sensor connected to GPIO 1
+#define ONE_WIRE_BUS 20  // Data wire for DS18B20 temperature sensor connected to GPIO 21
 
 // OneWire instance for temperature sensor
 OneWire oneWire(ONE_WIRE_BUS);
