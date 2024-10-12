@@ -1,61 +1,141 @@
 #include "LoRaWan_APP.h"
 #include "Arduino.h"
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <AESLib.h>
 
-// LoRa configuration settings
-#define RF_FREQUENCY          433000000  // Frequency in Hz
-#define LORA_BANDWIDTH        0          // [0: 125 kHz, 1: 250 kHz, 2: 500 kHz]
-#define LORA_SPREADING_FACTOR 7          // [SF7..SF12]
-#define LORA_CODINGRATE       1          // [1: 4/5, 2: 4/6, 3: 4/7, 4: 4/8]
-#define LORA_PREAMBLE_LENGTH  8          // Same for Tx and Rx
-#define LORA_SYMBOL_TIMEOUT   0          // Symbols
-#define LORA_FIX_LENGTH_PAYLOAD_ON false
-#define LORA_IQ_INVERSION_ON  false
-#define RX_TIMEOUT_VALUE      1000       // Timeout for receiving data
+// LoRa communication settings
+#define RF_FREQUENCY                                433000000 // Hz
+#define TX_OUTPUT_POWER                             14        // dBm
+#define LORA_BANDWIDTH                              0         // [0: 125 kHz]
+#define LORA_SPREADING_FACTOR                       7         // [SF7..SF12]
+#define LORA_CODINGRATE                             1         // [1: 4/5]
+#define LORA_PREAMBLE_LENGTH                        8         // Same for Tx and Rx
+#define LORA_SYMBOL_TIMEOUT                         0         // Symbols
+#define RX_TIMEOUT_VALUE                            1000
+#define BUFFER_SIZE                                 100 // Define the payload size here
 
-#define BUFFER_SIZE 30  // Define the payload size
+// AES encryption configuration
+byte aes_key[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}; // 16-byte key for AES-128
+byte aes_iv[N_BLOCK] = {16, 26, 36, 46, 56, 66, 76, 86, 96, 106, 116, 126, 136, 146, 156, 166}; // 16-byte IV
 
-char rxpacket[BUFFER_SIZE];  // Buffer to store received packets
+char txpacket[BUFFER_SIZE];
+char rxpacket[BUFFER_SIZE];
+
 static RadioEvents_t RadioEvents;
-int16_t rssi, rxSize;
-bool lora_idle = true;
 
-// Function prototypes
-void OnRxDone(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr);
+int16_t txNumber;
+int16_t rssi, rxSize;
+
+bool lora_idle = true;
+bool isDataReceivedViaLoRa = false;
+
+// Wi-Fi credentials and ThingSpeak settings
+const char* ssid = "YourSSID";
+const char* password = "YourPassword";
+const char* thingSpeakAPIKey = "YourAPIKey";
+const char* server = "https://api.thingspeak.com/update";
+
+// Variables to store sensor data
+float temperatureValue = 0.0;
+float pHValue = 0.0;
+float turbidityValue = 0.0;
+float dissolvedOxygenValue = 0.0; // Variable for dissolved oxygen
 
 void setup() {
     Serial.begin(115200);
     Mcu.begin(HELTEC_BOARD, SLOW_CLK_TPYE);
-    
-    // Initialize LoRa
-    RadioEvents.RxDone = OnRxDone;  // Set callback for when packet is received
-    Radio.Init(&RadioEvents);  // Initialize the radio with the event handlers
-    Radio.SetChannel(RF_FREQUENCY);  // Set the LoRa frequency
+    txNumber = 0;
+    rssi = 0;
+
+    // Initialize LoRa with predefined settings
+    RadioEvents.RxDone = OnRxDone;
+    Radio.Init(&RadioEvents);
+    Radio.SetChannel(RF_FREQUENCY);
     Radio.SetRxConfig(MODEM_LORA, LORA_BANDWIDTH, LORA_SPREADING_FACTOR,
                       LORA_CODINGRATE, 0, LORA_PREAMBLE_LENGTH,
                       LORA_SYMBOL_TIMEOUT, LORA_FIX_LENGTH_PAYLOAD_ON,
                       0, true, 0, 0, LORA_IQ_INVERSION_ON, true);
     
-    Serial.println("LoRa Receiver Initialized. Listening for incoming packets...");
-    
-    // Start the receiver immediately
-    Radio.Rx(0);  // Put LoRa into receive mode
+    // Connect to WiFi
+    connectToWiFi();
 }
 
 void loop() {
-    Radio.IrqProcess();  // Process any LoRa interrupts
+  if (lora_idle) {
+    lora_idle = false;
+    Serial.println("Entering RX mode - Listening for LoRa");
+    Radio.Rx(0);
+  }
+  Radio.IrqProcess();
 }
 
-// LoRa packet received handler
+// Function to handle received data, decrypt, and process
 void OnRxDone(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr) {
-    rxSize = size;  // Store received packet size
+    AESLib aesLib;
+    byte plain[BUFFER_SIZE];
+    int plainLength = aesLib.decrypt(payload, size, plain, aes_key, sizeof(aes_key), aes_iv);
+    plain[plainLength] = '\0'; // Ensure string termination
+
+    memcpy(rxpacket, plain, plainLength);
+    rxpacket[plainLength] = '\0';
+    Serial.printf("\r\nReceived and decrypted packet: \"%s\" with RSSI: %d, Length: %d\r\n", rxpacket, rssi, plainLength);
+
+    parseSensorData(String(rxpacket));
+    sendDataToThingSpeak(temperatureValue, pHValue, turbidityValue, dissolvedOxygenValue);
+}
+
+// Function to connect to WiFi
+void connectToWiFi() {
+    Serial.print("Connecting to WiFi...");
+    WiFi.begin(ssid, password);
+
+    while (WiFi.status() != WL_CONNECTED) {
+        delay(1000);
+        Serial.print(".");
+    }
     
-    // Copy the received payload into rxpacket buffer
-    memcpy(rxpacket, payload, size);
-    rxpacket[size] = '\0';  // Null-terminate the received string
+    Serial.println("\nWiFi connected.");
+    Serial.print("IP Address: ");
+    Serial.println(WiFi.localIP());
+}
 
-    // Print the received packet to Serial Monitor
-    Serial.printf("Received packet over LoRa: \"%s\" with RSSI %d, length %d\n", rxpacket, rssi, rxSize);
+// Function to parse sensor data from the decrypted string
+void parseSensorData(String data) {
+    // Example parsing for "Temp: XX°C, Turbidity: XX NTU, pH: XX, DO: XX mg/L"
+    int tempIndex = data.indexOf("Temp:");
+    int tempEnd = data.indexOf("°C", tempIndex);
+    temperatureValue = (tempIndex != -1 && tempEnd != -1) ? data.substring(tempIndex + 6, tempEnd).toFloat() : NAN;
+  
+    int turbidityIndex = data.indexOf("Turbidity:");
+    int turbidityEnd = data.indexOf("NTU", turbidityIndex);
+    turbidityValue = (turbidityIndex != -1 && turbidityEnd != -1) ? data.substring(turbidityIndex + 11, turbidityEnd).toFloat() : NAN;
 
-    // Immediately listen for the next packet
-    Radio.Rx(0);  // Re-enter receive mode
+    int phIndex = data.indexOf("pH:");
+    int phEnd = data.indexOf(",", phIndex);
+    pHValue = (phIndex != -1 && phEnd != -1) ? data.substring(phIndex + 4, phEnd).toFloat() : NAN;
+
+    int doIndex = data.indexOf("DO:");
+    int doEnd = data.indexOf("mg/L", doIndex);
+    dissolvedOxygenValue = (doIndex != -1 && doEnd != -1) ? data.substring(doIndex + 4, doEnd).toFloat() : NAN;
+}
+
+// Function to send data to ThingSpeak
+void sendDataToThingSpeak(float temperature, float pH, float turbidity, float dissolvedOxygen) {
+    if (WiFi.status() == WL_CONNECTED) {
+        HTTPClient http;
+        String url = String(server) + "?api_key=" + thingSpeakAPIKey;
+        url += "&field1=" + String(temperature) + "&field2=" + String(pH) + "&field3=" + String(turbidity) + "&field4=" + String(dissolvedOxygen);
+
+        http.begin(url);
+        int httpCode = http.GET();
+        if (httpCode > 0) {
+            Serial.printf("ThingSpeak Response Code: %d\n", httpCode);
+        } else {
+            Serial.printf("Error sending data to ThingSpeak: %s\n", http.errorToString(httpCode).c_str());
+        }
+        http.end();
+    } else {
+        Serial.println("WiFi not connected. Unable to send data to ThingSpeak.");
+    }
 }
